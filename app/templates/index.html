@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Счётчик заметок</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 Счётчик заметок</h1>
+            <p class="subtitle">Простое веб-приложение для работы с заметками</p>
+        </header>
+
+        <main>
+            <section class="stats">
+                <div class="stat-card">
+                    <h2>Текущее количество заметок</h2>
+                    <div class="count-display" id="notesCount">{{ notes_count }}</div>
+                </div>
+            </section>
+
+            <section class="actions">
+                <h2>Действия с заметками</h2>
+                
+                <div class="action-card">
+                    <h3>➕ Добавить заметку</h3>
+                    <div class="input-group">
+                        <input type="text" id="noteText" placeholder="Введите текст заметки..." maxlength="500">
+                        <button onclick="addNote()" class="btn btn-primary">Добавить</button>
+                    </div>
+                    <div id="addResult" class="result-message"></div>
+                </div>
+
+                <div class="action-card">
+                    <h3>🔢 Получить количество</h3>
+                    <button onclick="getCount()" class="btn btn-secondary">Обновить счётчик</button>
+                    <div id="countResult" class="result-message"></div>
+                </div>
+
+                <div class="action-card">
+                    <h3>📋 Показать все заметки</h3>
+                    <div class="button-group">
+                        <button onclick="listNotes('json')" class="btn btn-info">JSON формат</button>
+                        <button onclick="listNotes('html')" class="btn btn-info">HTML формат</button>
+                    </div>
+                    <div id="listResult" class="result-message list-result"></div>
+                </div>
+            </section>
+
+            <section class="info">
+                <h3>ℹ️ Информация</h3>
+                <p>Данные сохраняются в PostgreSQL и не теряются после перезапуска контейнеров.</p>
+                <p>Все операции логируются на сервере.</p>
+            </section>
+        </main>
+
+        <footer>
+            <p>Веб-приложение "Счётчик заметок" | Разработано с использованием Flask и PostgreSQL</p>
+        </footer>
+    </div>
+
+    <script>
+        // Функция для отображения сообщений
+        function showMessage(elementId, message, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = 'result-message ' + (isError ? 'error' : 'success');
+            
+            setTimeout(() => {
+                element.textContent = '';
+                element.className = 'result-message';
+            }, 5000);
+        }
+
+        // Функция для обновления отображаемого кол-во
+        function updateDisplayedCount() {
+            fetch('/count')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('notesCount').textContent = data.count;
+                    }
+                })
+                .catch(error => console.error('Ошибка:', error));
+        }
+
+        // Добавление заметки
+        function addNote() {
+            const noteText = document.getElementById('noteText').value.trim();
+            
+            if (!noteText) {
+                showMessage('addResult', 'Введите текст заметки!', true);
+                return;
+            }
+
+            if (noteText.length > 500) {
+                showMessage('addResult', 'Текст заметки слишком длинный (максимум 500 символов)!', true);
+                return;
+            }
+
+            // Кодируем текст для URL
+            const encodedText = encodeURIComponent(noteText);
+            
+            fetch(`/add/${encodedText}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showMessage('addResult', `✅ ${data.message} (ID: ${data.note_id})`);
+                        document.getElementById('noteText').value = '';
+                        updateDisplayedCount();
+                    } else {
+                        showMessage('addResult', `❌ ${data.message}`, true);
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка:', error);
+                    showMessage('addResult', '❌ Ошибка при добавлении заметки', true);
+                });
+        }
+
+        // Получение кол-во заметок
+        function getCount() {
+            fetch('/count')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showMessage('countResult', `📊 ${data.message}`);
+                        document.getElementById('notesCount').textContent = data.count;
+                    } else {
+                        showMessage('countResult', `❌ ${data.message}`, true);
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка:', error);
+                    showMessage('countResult', '❌ Ошибка при получении количества', true);
+                });
+        }
+
+        // Получение списка заметок
+        function listNotes(format) {
+            if (format === 'html') {
+                window.open('/list?format=html', '_blank');
+                showMessage('listResult', '📋 Список заметок открыт в новой вкладке');
+            } else {
+                fetch('/list')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            let resultText = `📋 Найдено заметок: ${data.count}\n\n`;
+                            data.notes.forEach(note => {
+                                resultText += `[${note.id}] ${note.text} (${note.created_at})\n`;
+                            });
+                            
+                            const resultElement = document.getElementById('listResult');
+                            resultElement.textContent = resultText;
+                            resultElement.className = 'result-message list-result success';
+                            
+                        } else {
+                            showMessage('listResult', `❌ ${data.message}`, true);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Ошибка:', error);
+                        showMessage('listResult', '❌ Ошибка при получении списка', true);
+                    });
+            }
+        }
+
+        document.getElementById('noteText').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addNote();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateDisplayedCount();
+        });
+    </script>
+</body>
+</html>
